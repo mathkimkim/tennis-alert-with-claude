@@ -10,14 +10,39 @@
 
 ## 구조
 
-- `server.js` — Express API 서버 + 정적 파일 서빙
+- `server.js` — Express API 서버 + 정적 파일 서빙 (로컬 실행 + Netlify Function 재사용 겸용)
 - `providers/` — **사이트별 스크래퍼**. 사이트마다 파일 하나씩 (예: `providers/gytennis.js`)
   - `providers/index.js` — 모든 프로바이더를 등록하는 레지스트리
   - `providers/_template.js` — 새 지역 추가할 때 복사해서 쓰는 템플릿
-- `scheduler.js` — N분마다 감시 중인 항목들을 확인 (프로바이더에 상관없이 동일한 방식으로 동작)
-- `push.js` — 웹 푸시(Web Push) 발송
-- `store.js` — 감시 목록 / 구독 정보를 JSON 파일로 저장 (`data/` 폴더에 생성됨)
+- `scheduler.js` — N분마다 감시 대상들을 확인 (프로바이더에 상관없이 동일한 방식으로 동작)
+- `push.js` — 웹 푸시(Web Push) 발송 (특정 기기들에게만 보냄)
+- `store.js` — 저장소 선택자 (로컬은 파일, Netlify는 Blobs)
+  - `storage/fileBackend.js` — 로컬 JSON 파일 저장 (`data/` 폴더)
+  - `storage/blobsBackend.js` — Netlify Blobs 저장
+- `netlify/functions/` — Netlify 배포용 서버리스 함수 (`api.js`, `tick.js`)
 - `public/` — 프론트엔드 (사이트 선택 → 코트 선택 → 날짜 선택 구조)
+
+## 👥 다중 사용자 구조 (target / interest / subscription)
+
+여러 사람이 같은 코트를 감시해도 사이트에 중복으로 요청이 나가지 않도록,
+"확인할 대상"과 "누가 관심있는지"를 분리했습니다.
+
+- **target** — 확인할 대상 (예: "고양 대화코트 이번 달 전체"). `provider+grp+mode+date`
+  조합이 같으면 몇 명이 등록하든 target은 딱 하나만 존재해요.
+- **interest** — 어떤 기기(deviceId)가 어떤 target에 관심있는지 연결하는 정보.
+  같은 target이라도 여러 기기가 각자 interest를 가질 수 있어요.
+- **subscription** — 브라우저 푸시 구독 정보. deviceId에 연결됩니다.
+
+**동작 흐름**: 스케줄러는 target 단위로 딱 한 번만 확인 → 변화가 생기면 그 target의
+interest들을 찾아서 → 그 deviceId들의 subscription에만 알림을 보냄.
+
+**deviceId는 어떻게 만들어지나요?**: 로그인 없이도 기기를 구분할 수 있도록,
+브라우저가 처음 접속할 때 무작위 ID를 만들어서 `localStorage`에 저장해두고 계속
+재사용합니다 (`public/app.js`의 `getDeviceId()`). 브라우저 데이터를 지우면 새 기기로
+인식되어 감시 목록이 초기화돼요 (알림 구독도 다시 해야 함).
+
+**한 target에 아무도 관심이 없어지면**: 마지막 interest가 삭제되는 순간 그 target도
+자동으로 함께 삭제되어, 스케줄러가 더 이상 그 코트를 확인하지 않게 됩니다.
 
 ## 고양특례시테니스협회는 어떻게 동작하나요?
 
@@ -164,6 +189,19 @@ npm start
 - "특정 코트+날짜" 모드로 등록한 감시는 여기 목록에 안 뜨는 게 정상이에요 (하루치만
   감시하는 모드라 7일 시간표엔 안 맞아서 제외했어요)
 
+## 🌙 야간 감시 중단 시간대
+
+새벽에는 어차피 예약을 안 하니, 사이트별로 아래 시간대엔 자동으로 확인을 건너뛰어요
+(에러가 아니라 정상적인 휴식이에요 — 상태 카드에 "지금 감시 중단 중"으로 표시됨):
+
+| 사이트 | 중단 시간 |
+|---|---|
+| 고양특례시테니스협회 | 22:00 ~ 08:00 |
+| 도봉구시설관리공단 | 00:30 ~ 08:00 |
+| 김포시체육회 | 00:30 ~ 08:00 |
+
+시간대를 바꾸고 싶으면 `scheduler.js`의 `QUIET_HOURS` 객체를 직접 수정하면 돼요.
+
 ## 📋 변경 이력 로그
 
 조회할 때마다 예약 가능 시간표가 바뀐 내역(새로 열린 시간대 / 다시 마감된 시간대)이
@@ -209,6 +247,45 @@ GitHub에서 새 저장소를 만들고, 안내되는 명령어로 push하세요
 
 **⚠️ 아이폰(iOS):** Safari로 그냥 열어놓은 상태로는 푸시가 안 되고,
 반드시 **"홈 화면에 추가"로 설치한 아이콘으로 실행한 상태**에서만 알림이 동작해요 (iOS 16.4+).
+
+## 🌐 웹으로 배포하기 (Netlify + cron-job.org, 다중 사용자용)
+
+여러 사람이 같이 쓰게 하려면 Netlify + cron-job.org 조합도 가능해요. Railway와 다르게
+"항상 켜져있는 서버"가 아니라 **필요할 때만 실행되는 서버리스 함수** 방식이에요.
+
+- **Netlify**: 화면(정적 파일) 호스팅 + API를 서버리스 함수로 실행, 데이터는 Netlify Blobs에 저장
+- **cron-job.org**: 예전의 `node-cron` 역할을 대신해서, 주기적으로 함수를 "호출"해주는 외부 서비스
+
+### 1) GitHub에 올리기 (위 Railway 섹션 1번과 동일)
+
+### 2) Netlify에 배포
+
+1. https://netlify.com 가입 → "Add new site" → "Import an existing project" → GitHub 저장소 선택
+2. 빌드 설정은 `netlify.toml`에 이미 다 들어있어서 (publish: `public`, functions: `netlify/functions`)
+   대부분 기본값 그대로 두면 됩니다.
+3. "Site configuration" → "Environment variables"에서 등록:
+   - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+   - `TICK_SECRET` = 아무 문자열이나 (cron-job.org가 이 값을 알아야 확인 함수를 실행할 수 있음)
+   - (`NETLIFY` 환경변수는 Netlify가 자동으로 설정해주므로 직접 등록할 필요 없어요)
+4. 배포 완료되면 `https://내사이트이름.netlify.app` 같은 주소가 생겨요.
+
+### 3) cron-job.org로 주기적 확인 예약
+
+Netlify Functions는 실행 시간 제한이 있어서, 등록된 감시 대상을 **한 번 호출에 하나씩만**
+순서대로 확인합니다 (라운드로빈). 그래서 cron-job.org는 자주 호출하도록 설정하는 게 좋아요.
+
+1. https://cron-job.org 가입 → "Create cronjob"
+2. URL: `https://내사이트이름.netlify.app/tick?key=위에서_설정한_TICK_SECRET`
+3. 실행 주기: 1분마다 (무료 플랜에서 지원하는 가장 짧은 주기로 설정 추천)
+4. 저장하면 그 순간부터 자동으로 주기적 확인이 시작돼요
+
+감시 대상이 N개면 한 바퀴 도는 데 대략 N분이 걸리는 셈이에요 (감시 대상이 많아지면
+cron-job.org 호출 주기를 더 짧게 하거나, `tick.js`가 한 번에 여러 개씩 처리하도록
+늘리는 것도 가능해요 — 필요하면 말씀해주세요).
+
+### 4) 폰에서 접속
+
+Railway 섹션의 "3) 폰에서 접속"과 동일합니다.
 
 ## 🔧 자주 발생하는 오류
 
