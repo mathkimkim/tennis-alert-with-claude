@@ -7,6 +7,7 @@ const {
   getInterestsByTarget,
   getKnownState,
   setKnownState,
+  getSchedulerStatus,
   setSchedulerStatus,
   appendChangeLog,
 } = require("./store");
