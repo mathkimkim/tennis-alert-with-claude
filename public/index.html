@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>테니스 취소 알림</title>
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0f172a" />
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    min-height: 100vh;
+  }
+  header {
+    padding: 24px 20px 8px;
+  }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: #94a3b8; font-size: 14px; }
+  main { max-width: 480px; margin: 0 auto; padding: 16px 20px 60px; }
+  .card {
+    background: #1e293b;
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 12px; color: #cbd5e1; }
+  label { display: block; font-size: 13px; color: #94a3b8; margin: 10px 0 4px; }
+  input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #334155;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-size: 14px;
+  }
+  button {
+    margin-top: 14px;
+    width: 100%;
+    padding: 12px;
+    border-radius: 10px;
+    border: none;
+    background: #22c55e;
+    color: #052e16;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: #334155;
+    color: #e2e8f0;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .status {
+    font-size: 13px;
+    margin-top: 10px;
+    color: #94a3b8;
+  }
+  .watch-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid #334155;
+  }
+  .watch-item:last-child { border-bottom: none; }
+  .watch-item div.info b { display: block; font-size: 14px; }
+  .watch-item div.info span { font-size: 12px; color: #94a3b8; }
+  .watch-item button {
+    width: auto;
+    margin: 0;
+    padding: 6px 10px;
+    background: #ef4444;
+    color: white;
+    font-size: 12px;
+  }
+  .empty { color: #64748b; font-size: 13px; text-align: center; padding: 12px 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; margin-left: 6px; }
+  .badge.ok { background: #14532d; color: #86efac; }
+  .badge.err { background: #7f1d1d; color: #fca5a5; }
+  .badge.idle { background: #334155; color: #cbd5e1; }
+  .status-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; color: #cbd5e1; }
+  .status-row b { color: #e2e8f0; }
+  .log-item { padding: 8px 0; border-bottom: 1px solid #334155; font-size: 13px; }
+  .log-item:last-child { border-bottom: none; }
+  .log-item .log-time { color: #64748b; font-size: 11px; }
+  .log-item .log-open { color: #86efac; }
+  .log-item .log-close { color: #fca5a5; }
+  .tt-day { padding: 8px 0; border-bottom: 1px solid #334155; font-size: 13px; }
+  .tt-day:last-child { border-bottom: none; }
+  .tt-day .tt-date { color: #cbd5e1; font-weight: 600; margin-bottom: 4px; }
+  .tt-day .tt-slots { color: #86efac; }
+  .tt-day .tt-none { color: #64748b; }
+  .tt-day .tt-unknown { color: #64748b; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎾 테니스 취소 알림</h1>
+  <p>고양특례시테니스협회 코트를 감시하다가 빈자리가 나면 바로 알려드려요.</p>
+</header>
+<main>
+
+  <div class="card" id="statusCard">
+    <h2>📡 감시 상태</h2>
+    <div id="statusBody" class="status">확인 중...</div>
+  </div>
+
+  <div class="card">
+    <h2>1. 알림 받기 (브라우저 푸시 구독)</h2>
+    <button id="subscribeBtn">이 브라우저에서 알림 받기</button>
+    <div class="status" id="subStatus">아직 구독하지 않았어요.</div>
+  </div>
+
+  <div class="card">
+    <h2>2. 전체 코트 이번 달 통째로 감시</h2>
+    <p style="font-size:13px;color:#94a3b8;margin:0 0 6px;">
+      선택한 사이트의 모든 코트, 이번 달 모든 날짜를 한 번에 감시 등록해요.
+      요청을 아끼기 위해 날짜별 상세 시간표는 빈자리가 실제로 늘어난 날짜만 확인합니다.
+    </p>
+    <label>사이트</label>
+    <select id="providerSelectAll"></select>
+    <button id="watchAllBtn">전체 코트 · 이번 달 전체 감시 시작</button>
+    <div class="status" id="watchAllStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>3. 특정 코트 + 특정 날짜만 정밀 감시</h2>
+    <label>사이트</label>
+    <select id="providerSelect"></select>
+    <label>코트 위치</label>
+    <select id="courtSelect"></select>
+    <label>알림에 표시될 이름 (선택)</label>
+    <input id="labelInput" placeholder="비워두면 코트 이름이 그대로 사용돼요" />
+    <label>감시할 날짜</label>
+    <input id="dateInput" type="date" />
+    <button id="addWatchBtn">감시 등록</button>
+    <div class="status" id="watchStatus"></div>
+  </div>
+
+  <div class="card">
+    <h2>등록된 감시 목록</h2>
+    <div id="watchList"><div class="empty">등록된 감시가 없어요.</div></div>
+  </div>
+
+  <div class="card">
+    <h2>📅 다음 7일 예약 가능 시간표</h2>
+    <p style="font-size:13px;color:#94a3b8;margin:0 0 6px;">
+      "이번 달 전체 (자동)" 감시로 등록된 코트만 여기서 볼 수 있어요. 서버가 3분마다 갱신하는
+      데이터를 그대로 보여주기 때문에, 빈자리가 생기거나 사라지면 이 화면도 자동으로 바뀌어요.
+    </p>
+    <label>어떤 감시를 볼까요?</label>
+    <select id="timetableWatchSelect"><option value="">-- 감시 항목 선택 --</option></select>
+    <div id="timetableBody" style="margin-top:10px;"><div class="empty">감시 항목을 선택해주세요.</div></div>
+  </div>
+
+  <div class="card">
+    <h2>📋 최근 변경 이력</h2>
+    <p style="font-size:13px;color:#94a3b8;margin:0 0 6px;">
+      조회할 때마다 예약 가능 시간표가 바뀐 내역이 서버의 로그 파일(<code>data/availability-changes.jsonl</code>)에 계속 쌓여요.
+    </p>
+    <a href="/api/change-log/download" download style="font-size:13px;color:#22c55e;">⬇ 로그 파일 전체 다운로드</a>
+    <div id="changeLogList" style="margin-top:10px;"><div class="empty">아직 기록된 변경 이력이 없어요.</div></div>
+  </div>
+
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
