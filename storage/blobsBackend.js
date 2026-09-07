@@ -10,6 +10,13 @@ const STORE_NAME = "tennis-alert-data";
 const MAX_LOG_ENTRIES = 1000;
 
 function store() {
+  // 일부 배포 환경에서는 Netlify Blobs가 siteID/token을 자동으로 못 찾는 경우가 있어서,
+  // 환경변수로 직접 넘겨줄 수 있게 해뒀습니다 (자동 감지가 되면 이 값들은 없어도 됩니다).
+  const siteID = process.env.NETLIFY_SITE_ID;
+  const token = process.env.NETLIFY_BLOBS_TOKEN;
+  if (siteID && token) {
+    return getStore({ name: STORE_NAME, siteID, token });
+  }
   return getStore(STORE_NAME);
 }
 
