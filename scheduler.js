@@ -247,7 +247,12 @@ async function checkMonthTarget(target, provider, knownState) {
   return null;
 }
 
-// ---- Netlify 배포용: 한 번 호출에 대상 1개만 확인 (라운드로빈) ----
+// ---- Netlify 배포용: 한 번 호출에 대상을 몇 개씩(기본 1개) 확인 (라운드로빈) ----
+// 대상이 많아질수록 한 바퀴 도는 데 시간이 오래 걸리니, TICK_BATCH_SIZE로 한 번에
+// 몇 개씩 처리할지 조절할 수 있습니다. 다만 Netlify Functions 실행 시간 제한(보통 10초)을
+// 넘지 않게, 사이트당 소요 시간을 고려해서 너무 크게 잡지는 마세요.
+const TICK_BATCH_SIZE = Math.max(1, parseInt(process.env.TICK_BATCH_SIZE || "1", 10));
+
 async function checkOneRoundRobin() {
   const targets = await getTargets();
   if (targets.length === 0) {
@@ -263,33 +268,39 @@ async function checkOneRoundRobin() {
   }
 
   const status = await getSchedulerStatus();
-  const cursor = Number.isInteger(status.tickCursor) ? status.tickCursor : 0;
-  const target = targets[cursor % targets.length];
-  const nextCursor = (cursor + 1) % targets.length;
+  const startCursor = Number.isInteger(status.tickCursor) ? status.tickCursor : 0;
+  const batchSize = Math.min(TICK_BATCH_SIZE, targets.length);
 
-  const providerId = target.provider || "gytennis";
   let errorMsg = null;
   let skippedCount = 0;
+  let cursor = startCursor;
 
-  if (isInQuietHours(providerId)) {
-    skippedCount = 1;
-  } else {
-    const knownState = await getKnownState();
-    try {
-      const provider = getProvider(providerId);
-      if (target.mode === "month") {
-        const monthError = await checkMonthTarget(target, provider, knownState);
-        if (monthError) {
-          console.error(`[scheduler] ${target.label}:`, monthError);
-          errorMsg = `${target.label}: ${monthError}`;
+  for (let i = 0; i < batchSize; i++) {
+    const target = targets[cursor % targets.length];
+    const providerId = target.provider || "gytennis";
+
+    if (isInQuietHours(providerId)) {
+      skippedCount++;
+    } else {
+      const knownState = await getKnownState();
+      try {
+        const provider = getProvider(providerId);
+        if (target.mode === "month") {
+          const monthError = await checkMonthTarget(target, provider, knownState);
+          if (monthError) {
+            console.error(`[scheduler] ${target.label}:`, monthError);
+            errorMsg = `${target.label}: ${monthError}`;
+          }
+        } else {
+          await checkDateTarget(target, provider, knownState);
         }
-      } else {
-        await checkDateTarget(target, provider, knownState);
+      } catch (err) {
+        console.error(`[scheduler] ${target.label} 확인 중 오류:`, err.message);
+        errorMsg = `${target.label}: ${err.message}`;
       }
-    } catch (err) {
-      console.error(`[scheduler] ${target.label} 확인 중 오류:`, err.message);
-      errorMsg = `${target.label}: ${err.message}`;
     }
+
+    cursor = (cursor + 1) % targets.length;
   }
 
   await setSchedulerStatus({
@@ -298,7 +309,7 @@ async function checkOneRoundRobin() {
     lastError: errorMsg,
     checkedCount: targets.length,
     skippedCount,
-    tickCursor: nextCursor,
+    tickCursor: cursor,
   });
 }
 

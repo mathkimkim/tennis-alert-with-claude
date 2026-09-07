@@ -67,11 +67,18 @@ app.get("/api/status", async (req, res) => {
     store.getInterests(),
     store.getSubscriptions(),
   ]);
+
+  // tickCursor 값이 있으면 Netlify(cron-job.org 라운드로빈) 방식으로 돌고 있다는 뜻이고,
+  // 없으면 로컬(node-cron, 등록된 대상 전부를 매번 확인) 방식입니다.
+  const isRoundRobin = Number.isInteger(schedulerStatus.tickCursor);
+
   res.json({
     scheduler: schedulerStatus,
     targetCount: targets.length,
     interestCount: interests.length,
     subscriptionCount: subs.length,
+    checkMode: isRoundRobin ? "roundrobin" : "interval",
+    tickBatchSize: parseInt(process.env.TICK_BATCH_SIZE || "1", 10),
     checkIntervalMin: parseInt(process.env.CHECK_INTERVAL_MIN || "3", 10),
     serverTime: new Date().toISOString(),
   });
