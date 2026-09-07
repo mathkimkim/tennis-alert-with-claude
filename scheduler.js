@@ -282,8 +282,8 @@ async function checkOneRoundRobin() {
     if (isInQuietHours(providerId)) {
       skippedCount++;
     } else {
-      const knownState = await getKnownState();
       try {
+        const knownState = await getKnownState();
         const provider = getProvider(providerId);
         if (target.mode === "month") {
           const monthError = await checkMonthTarget(target, provider, knownState);
