@@ -1,0 +1,20 @@
+[build]
+  functions = "netlify/functions"
+  publish = "public"
+
+[functions]
+  # server.js, scheduler.js, store.js, providers/, storage/ 등 함수가 require하는
+  # 파일들을 전부 함께 번들링하도록 지정 (esbuild가 자동으로 따라가긴 하지만 명시해둠)
+  node_bundler = "esbuild"
+
+# 프론트엔드는 예전처럼 /api/... 로 호출하면 되도록, 뒤에서 조용히 Function으로 연결합니다.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+
+# cron-job.org가 주기적으로 두드릴 주소 (짧게 /tick 으로 접근 가능하게)
+[[redirects]]
+  from = "/tick"
+  to = "/.netlify/functions/tick"
+  status = 200
